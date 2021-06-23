@@ -1,0 +1,16 @@
+html, body {
+	margin: 0;
+	overflow: hidden;
+}
+.box {
+	position: absolute;
+	bottom: 0;
+	right: 0;
+	padding: 10px;
+	font-size: 1.1em;
+	color: ghostwhite;
+	background-color: rgba(0,0,0,0.2);
+	font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+	width: 11em;
+	text-align: right;
+}
