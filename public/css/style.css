@@ -1,16 +1,26 @@
 html, body {
 	margin: 0;
 	overflow: hidden;
+	font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 .box {
 	position: absolute;
 	bottom: 0;
 	right: 0;
-	padding: 10px;
-	font-size: 1.1em;
+	padding: 0.7em;
+	font-size: 1.2em;
 	color: ghostwhite;
-	background-color: rgba(0,0,0,0.2);
-	font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+	background-color: rgba(0,0,0,0.3);
 	width: 11em;
 	text-align: right;
+	user-select: none;
+}
+.sizeWarning {
+	position: fixed;
+	bottom: 0;
+	left: 0;
+	padding: 1em;
+	color: ghostwhite;
+	font-weight: bold;
+	background-color: rgba(0,0,0,0.3);
 }

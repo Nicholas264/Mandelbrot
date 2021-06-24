@@ -1,5 +1,4 @@
 // Web worker that renders the Mandelbrot fractal in a different thread from the main one
-
 var fractal;
 
 // Handler for messages from the main script
@@ -10,16 +9,22 @@ this.onmessage = async m => {
 		case "create":
 			fractal = new Mandelbrot(data.w, data.h);
 		break;
-		case "getCanvas":
-			sendCanvas();
-		break;
 		case "resize":
 			fractal.resize(data.w, data.h);
-			sendCanvas();
+			fractal.draw();
 		break;
 		case "zoom":
 			fractal.zoom(data.x, data.y, data.m);
-			sendCanvas();
+			if (fractal.win.scale < 5e-14) {
+				post("tooSmall");
+			} else {
+				post("justRight");
+			}
+			fractal.draw();
+		break;
+		case "drawFractal":
+			fractal.draw();
+		break;
 		default:
 			return;
 	}
@@ -27,14 +32,11 @@ this.onmessage = async m => {
 function post(n, d) {
 	postMessage({name: n, data: d});
 }
-async function sendCanvas() {
-	post("canvasData", (await fractal.drawToCanvas()).transferToImageBitmap());
-}
 
 class Mandelbrot {
 
 	static ESCAPE_RADIUS = 2;
-	static MAX_ITER = 2000;
+	static MAX_ITER = 1000;
 
 	/**
 	 * 
@@ -42,8 +44,6 @@ class Mandelbrot {
 	 * @param h Height of canvas that is being drawn to
 	 */
 	constructor(w, h) {
-		this.canvas = new OffscreenCanvas(w, h);
-		this.ctx = this.canvas.getContext("2d");
 		this.win = {
 			w: w,
 			h: h,
@@ -53,13 +53,15 @@ class Mandelbrot {
 			x: -3,
 			y: -1.5
 		};
+		this.pixelBuffer = [];
+		this.bufferIndex = 0;
 	}
 	/**
 	 * Iterates over every pixel of the canvas and checks if the respective coordinate at that
 	 * pixel is going to escape the ESCAPE_RADIUS, and then fills that pixel in accordingly with
 	 * the color returned by the coloring function
 	 */
-	async drawToCanvas() {
+	async draw() {
 		for (let x = 0; x < this.win.w; x++) {
 			if (x % 100 === 0 || x === 0) post("progress", x / this.win.w);
 			for (let y = 0; y < this.win.h; y++) {
@@ -72,11 +74,11 @@ class Mandelbrot {
 					}
 					z = z.square().add(c);
 				}
-				this.fillPixel(x, y, this.colorFunc2(i, z));
+				this.fillPixel(x, y, this.colorFunc4(i, z));
 			}
 		}
+		this.fillPixel(null, null, null, true);
 		post("done");
-		return this.canvas;
 	}
 	/**
 	 * Colors the fractal in grayscale
@@ -90,9 +92,9 @@ class Mandelbrot {
 	}
 	colorFunc2(i, z) {
 		if (i == Mandelbrot.MAX_ITER) return "white";
-		let a = ((i / Mandelbrot.MAX_ITER) * 1.9) - 1.55;
-		let h = ((i + 1) - Math.log(Math.log(z.abs()) / Math.log(2))) / (i + 1)
-		return `hsl(${170 + (Math.sin(h * 2 * Math.PI) + 1) * 145}, 100%, ${20 + Math.cbrt(i / Mandelbrot.MAX_ITER) * 80}%)`;
+		//let a = ((i / Mandelbrot.MAX_ITER) * 1.9) - 1.55;
+		let h = ((i + 1) - Math.log(Math.log(z.abs()) / Math.log(2))) / (i + 1);
+		return `hsl(${((1 / this.win.scale) % 360) + (Math.sin(h * 2 * Math.PI) + 1) * 145}, 100%, ${30 + Math.tan(i) * 50}%)`;
 	}
 	colorFunc3(i, z) {
 		if (i == Mandelbrot.MAX_ITER) return "white";
@@ -101,17 +103,29 @@ class Mandelbrot {
 			post("log", color);
 		}
 	}
+	colorFunc4(i, z) {
+		if (i == Mandelbrot.MAX_ITER) return "white";
+		//let a = ((i / Mandelbrot.MAX_ITER) * 1.9) - 1.55;
+		let h = ((i + 1) - Math.log(Math.log(z.abs()) / Math.log(2))) / (i + 1);
+		return `hsl(${((1 / this.win.scale) % 360) + 250 + (Math.sin(h * 2 * Math.PI) + 1) * 145}, 100%, ${30 + ((i % 30) / 30) * 50}%)`;
+	}
 	/**
 	 * Fills a pixel at (x, y) with the specified color on the offscreen canvas
 	 * @param x the x coordinate on the canvas
 	 * @param y the y coordinate on the canvas
 	 * @param color any valid css color string that the pixel will be set to
+	 * @param sendBuffer if true, sends the buffer to the main script regardless of how large it is
 	 */
-	fillPixel(x, y, color) {
-		this.ctx.save();
-		this.ctx.fillStyle = color;
-		this.ctx.fillRect(x, y, 1, 1);
-		this.ctx.restore();
+	fillPixel(x, y, color, sendBuffer) {
+		if (!sendBuffer) {
+			this.pixelBuffer[this.bufferIndex] = {x: x, y: y, c: color};
+			this.bufferIndex++;
+		}
+		if (this.bufferIndex === 10000 || sendBuffer) {
+			post("pixels", this.pixelBuffer);
+			this.pixelBuffer = [];
+			this.bufferIndex = 0;
+		}
 	}
 	/**
 	 * Zooms in or out of the fractal at a position [x, y] with a multiplier
@@ -146,8 +160,6 @@ class Mandelbrot {
 		this.scale *= w / this.win.w;
 		this.win.w = w;
 		this.win.h = h;
-		this.canvas = new OffscreenCanvas(w, h);
-		this.ctx = this.canvas.getContext("2d");
 	}
 }
 
@@ -184,4 +196,3 @@ class Complex {
 		return `${this.real}${this.imaginary}i`;
 	}
 }
-//https://randomascii.wordpress.com/2011/08/13/faster-fractals-through-algebra/

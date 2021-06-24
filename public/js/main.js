@@ -5,6 +5,7 @@ const RESIZE_DELAY = 1000;
 
 const canvas = document.getElementById("plane");
 const progress = document.getElementById("progress");
+const sizeWarning = document.querySelector("div.sizeWarning");
 const ctx = canvas.getContext("2d");
 
 // Sets the initial canvas dimensions
@@ -22,13 +23,9 @@ var tempZoomCoords = [0, 0];
 
 // Loads a web worker that renders a Mandelbrot fractal in a separate thread
 const fractal = new Worker("js/mandelbrot.js");
-fractal.onmessage = (m) => {
+fractal.onmessage = async (m) => {
 	m = m.data;
 	switch (m.name) {
-		case "canvasData":
-			canvasCache = m.data;
-			ctx.drawImage(m.data, 0, 0);
-		break;
 		case "log":
 			console.log(m);
 		break;
@@ -39,7 +36,20 @@ fractal.onmessage = (m) => {
 		break;
 		case "done":
 			progress.parentElement.style.display = "none";
+			canvasCache = await createImageBitmap(canvas, 0, 0, window.innerWidth, window.innerHeight);
 			rendering = false;
+		break;
+		case "pixels":
+			for (let pixel of m.data) {
+				ctx.fillStyle = pixel.c;
+				ctx.fillRect(pixel.x, pixel.y, 1, 1);
+			}
+		break;
+		case "tooSmall":
+			sizeWarning.style.display = "initial";
+		break;
+		case "justRight":
+			sizeWarning.style.display = "none";
 		break;
 		default:
 			return;
@@ -100,25 +110,35 @@ document.addEventListener("wheel", e => {
 
 // Instructs the worker to zoom in on the point the user clicks
 document.addEventListener("click", e => {
-	if (rendering) return;
-	drawPreliminaryZoom(e.x, e.y, multiplier * 0.5);
-	fractal.post("zoom", {
-		x: e.x,
-		y: e.y,
-		m: multiplier
-	});
+	if (e.shiftKey) {
+		zoom(e, 1);
+	} else {
+		zoom(e, 0.5);
+	}
 });
 
 // Instructs the worker to zoom out on the point the user clicks
 document.addEventListener("contextmenu", e => {
 	e.preventDefault();
-	drawPreliminaryZoom(e.x, e.y, multiplier * 2);
+	zoom(e, 2);
+});
+
+/**
+ * Zooms the fractal in 
+ * @param e the click event, must be an object in the form {x: number, y: number}
+ * @param newmult
+ */
+function zoom(e, newmult) {
+	if (rendering) return;
+	multiplier = newmult;
+	drawPreliminaryZoom(e.x, e.y);
 	fractal.post("zoom", {
 		x: e.x,
 		y: e.y,
 		m: multiplier
 	});
-});
+	multiplier = 1;
+}
 
 /**
  * Uses the previous state of the canvas to show a rough preview of the zoomed fractal while
@@ -127,18 +147,17 @@ document.addEventListener("contextmenu", e => {
  * @param y the y coordinate you are zooming in to
  * @param zoomLevel the multiplier at which you are zooming into the fractal
  */
-function drawPreliminaryZoom(x, y, zoomLevel) {
+function drawPreliminaryZoom(x, y) {
 	if (canvasCache) {
-		multiplier = zoomLevel;
 		ctx.save();
 		ctx.fillStyle = "black";
 		ctx.fillRect(0, 0, canvas.width, canvas.height);
 		ctx.drawImage(
 			canvasCache,
-			-(x / zoomLevel - 0.5 * canvas.width),
-			-(y / zoomLevel - 0.5 * canvas.height),
-			canvasCache.width / zoomLevel,
-			canvasCache.height / zoomLevel
+			-(x / multiplier - 0.5 * canvas.width),
+			-(y / multiplier - 0.5 * canvas.height),
+			canvasCache.width / multiplier,
+			canvasCache.height / multiplier
 		);
 		ctx.restore();
 	}
@@ -147,9 +166,13 @@ function drawPreliminaryZoom(x, y, zoomLevel) {
 // Initializes the canvas and instructs the worker to draw the fractal
 (function init() {
 	fractal.post("create", {w: window.innerWidth, h: window.innerHeight});
-	fractal.post("getCanvas");
+	fractal.post("drawFractal");
 })();
 
 //this.ctx.drawImage(canvas, 0, -y + (this.win.h * percent / 2), this.win.w * percent, this.win.h * percent);
 //https://www.math.univ-toulouse.fr/~cheritat/wiki-draw/index.php/Mandelbrot_set
 //http://davidbau.com/mandelbrot/
+/*this.ctx.save();
+		this.ctx.fillStyle = color;
+		this.ctx.fillRect(x, y, 1, 1);
+		this.ctx.restore();*/
